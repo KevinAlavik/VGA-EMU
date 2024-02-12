@@ -4,7 +4,6 @@
 
 int main() {
   VGA vga = init_vga();
-  init_vram(&(vga.vram));
 
   while (vga.isAlive) {
     for (int y = 0; y < HEIGHT; ++y) {

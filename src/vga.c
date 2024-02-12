@@ -4,6 +4,15 @@ void log_message(const char *type, const char *message) {
   printf("[%s] %s\n", type, message);
 }
 
+void init_vram(VRAM *vram) {
+  for (int y = 0; y < HEIGHT; y++) {
+    for (int x = 0; x < WIDTH; x++) {
+      int pos = y * WIDTH + x;
+      vram->buffer[pos] = BLACK;
+    }
+  }
+}
+
 VGA init_vga() {
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
     log_message("ERROR", SDL_GetError());
@@ -31,12 +40,18 @@ VGA init_vga() {
     exit(EXIT_FAILURE);
   }
 
-  for (int y = 0; y < HEIGHT; y++) {
-    for (int x = 0; x < WIDTH; x++) {
-      int pos = y * WIDTH + x;
-      vga.vram.buffer[pos] = BLACK;
-    }
+  // Create a texture for rendering
+  vga.texture = SDL_CreateTexture(vga.renderer, SDL_PIXELFORMAT_ARGB8888,
+                                  SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
+  if (vga.texture == NULL) {
+    log_message("ERROR", SDL_GetError());
+    SDL_DestroyRenderer(vga.renderer);
+    SDL_DestroyWindow(vga.window);
+    SDL_Quit();
+    exit(EXIT_FAILURE);
   }
+
+  init_vram(&(vga.vram)); // Initialize VRAM
   vga.isAlive = 1;
 
   log_message("INFO", "VGA initialized");
@@ -44,40 +59,38 @@ VGA init_vga() {
 }
 
 void cleanup_vga(VGA *vga) {
+  SDL_DestroyTexture(vga->texture); // Destroy texture
   SDL_DestroyRenderer(vga->renderer);
   SDL_DestroyWindow(vga->window);
   SDL_Quit();
   log_message("INFO", "VGA cleaned up");
 }
 
-void draw_pixels(SDL_Renderer *renderer, VRAM *vram) {
-  for (int y = 0; y < HEIGHT; y++) {
-    for (int x = 0; x < WIDTH; x++) {
-      int pos = y * WIDTH + x;
-      Uint32 color = vram->buffer[pos];
-      SDL_SetRenderDrawColor(renderer, (color >> 16) & 0xFF,
-                             (color >> 8) & 0xFF, color & 0xFF, 255);
-      SDL_RenderDrawPoint(renderer, x, y);
-    }
-  }
-}
+void update_texture(SDL_Texture *texture, VRAM *vram) {
+  void *pixels;
+  int pitch;
 
-void init_vram(VRAM *vram) {
-  for (int y = 0; y < HEIGHT; y++) {
-    for (int x = 0; x < WIDTH; x++) {
-      int pos = y * WIDTH + x;
-      vram->buffer[pos] = BLACK;
-    }
-  }
+  // Lock the texture for writing
+  SDL_LockTexture(texture, NULL, &pixels, &pitch);
+
+  // Copy VRAM buffer to the texture's pixel data
+  memcpy(pixels, vram->buffer, VRAM_SIZE * sizeof(uint32_t));
+
+  // Unlock the texture
+  SDL_UnlockTexture(texture);
 }
 
 void run_vga(VGA *vga) {
   int startTime = SDL_GetTicks(); // Get the current time
 
+  update_texture(vga->texture, &(vga->vram)); // Update texture with VRAM data
+
   SDL_SetRenderDrawColor(vga->renderer, 0, 0, 0, 255);
   SDL_RenderClear(vga->renderer);
 
-  draw_pixels(vga->renderer, &(vga->vram));
+  // Render the texture
+  SDL_RenderCopy(vga->renderer, vga->texture, NULL, NULL);
+
   SDL_RenderPresent(vga->renderer);
 
   SDL_Event event;
